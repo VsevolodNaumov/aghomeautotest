@@ -100,6 +100,8 @@ async function installAdGuardHome() {
         '-c',
         'curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v -r',
     ]);
+    log('Принудительный запуск AdGuardHome после установки');
+    runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome'], { allowFail: true });
     log('✅ AdGuardHome установлен');
 }
 function createInternalNetwork() {
