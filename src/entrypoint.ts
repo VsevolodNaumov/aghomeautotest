@@ -1,5 +1,6 @@
-import { appendFileSync, existsSync, mkdirSync } from 'fs';
-import { spawn, spawnSync } from 'child_process';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs';
+import { spawn, spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'child_process';
+import path from 'path';
 
 interface DhcpConfig {
   interfaceName: string;
@@ -25,6 +26,12 @@ interface RunnerConfig {
   hostInterface: string;
   bridgeName: string;
   dhcp: DhcpConfig;
+  cloudInit: {
+    hostname: string;
+    password: string;
+    seedImagePath: string;
+    commands: string[];
+  };
 }
 
 const config: RunnerConfig = {
@@ -49,6 +56,15 @@ const config: RunnerConfig = {
     v6RangeEnd: process.env.DHCP_V6_RANGE_END ?? '',
     v6LeaseDuration: Number(process.env.DHCP_V6_LEASE_DURATION ?? '86400'),
   },
+  cloudInit: {
+    hostname: process.env.CLOUDINIT_HOSTNAME ?? 'alpine-qemu',
+    password: process.env.CLOUDINIT_PASSWORD ?? 'alpine',
+    seedImagePath: process.env.CLOUDINIT_SEED_PATH ?? '/root/cloudinit-seed.img',
+    commands:
+      process.env.CLOUDINIT_COMMANDS?.split(';')
+        .map((item) => item.trim())
+        .filter(Boolean) ?? ['echo "AdGuardHome test VM is ready"'],
+  },
 };
 
 function ensureLogLocation() {
@@ -72,9 +88,9 @@ function runCommand(
 ): string {
   const prettyCommand = `$ ${command} ${args.join(' ')}`.trim();
   log(prettyCommand);
-  const spawnOptions = {
+  const spawnOptions: SpawnSyncOptionsWithStringEncoding = {
     stdio: options.captureOutput ? 'pipe' : 'inherit',
-    encoding: 'utf-8' as const,
+    encoding: 'utf-8',
   };
   const result = spawnSync(command, args, spawnOptions);
 
@@ -272,7 +288,10 @@ function startQemu() {
     return;
   }
 
-  log('=== Step 7: Запуск Alpine Linux напрямую ===');
+  log('=== Step 7: Подготовка cloud-init и запуск Alpine Linux ===');
+
+  const cloudInitImage = prepareCloudInitImage();
+
   const qemu = spawn(
     'qemu-system-x86_64',
     [
@@ -282,6 +301,8 @@ function startQemu() {
       'file=/root/alpine.qcow2,if=virtio,format=qcow2',
       '-boot',
       'c',
+      '-drive',
+      `file=${cloudInitImage},if=virtio,format=raw`,
       '-nic',
       `tap,ifname=${config.tapInterface},script=no,downscript=no,model=virtio-net-pci`,
       '-serial',
@@ -296,6 +317,55 @@ function startQemu() {
     log(`QEMU завершился с кодом ${code ?? 0}`);
     process.exit(code ?? 0);
   });
+}
+
+function prepareCloudInitImage(): string {
+  const workspace = mkdtempSync('/tmp/cloudinit-');
+  const userDataPath = path.join(workspace, 'user-data');
+  const metaDataPath = path.join(workspace, 'meta-data');
+  const networkConfigPath = path.join(workspace, 'network-config');
+
+  const networkConfig = ['version: 2', 'ethernets:', '  eth0:', '    dhcp4: true', '    dhcp6: false'].join('\n');
+  writeFileSync(networkConfigPath, `${networkConfig}\n`);
+
+  const commandLines =
+    config.cloudInit.commands.length > 0
+      ? config.cloudInit.commands
+      : ['echo "AdGuardHome test VM is ready"'];
+
+  const renderedCommands = commandLines
+    .map((command) => command.replace(/"/g, '\\"'))
+    .map((command) => `  - ["/bin/sh", "-c", "${command}"]`)
+    .join('\n');
+
+  const userData = [
+    '#cloud-config',
+    `hostname: ${config.cloudInit.hostname}`,
+    `password: ${config.cloudInit.password}`,
+    'ssh_pwauth: true',
+    'chpasswd: { expire: false }',
+    'write_files:',
+    '  - path: /etc/network/interfaces',
+    "    permissions: '0644'",
+    '    content: |',
+    '      auto lo',
+    '      iface lo inet loopback',
+    '      auto eth0',
+    '      iface eth0 inet dhcp',
+    'runcmd:',
+    renderedCommands,
+  ].join('\n');
+
+  writeFileSync(userDataPath, `${userData}\n`);
+  writeFileSync(
+    metaDataPath,
+    `instance-id: alpine-adguard\nlocal-hostname: ${config.cloudInit.hostname}\n`,
+  );
+
+  runCommand('cloud-localds', ['-N', networkConfigPath, config.cloudInit.seedImagePath, userDataPath, metaDataPath]);
+  log(`Cloud-init seed образ создан: ${config.cloudInit.seedImagePath}`);
+
+  return config.cloudInit.seedImagePath;
 }
 
 async function main() {
