@@ -261,8 +261,8 @@ function restartAdGuard() {
         log('⏭️  Пропускаю рестарт AdGuardHome (SKIP_ADGUARD_RESTART=1).');
         return;
     }
-    runCommand('/opt/AdGuardHome/AdGuardHome', ['-s', 'restart'], { allowFail: true });
-    log('AdGuardHome перезапущен');
+    runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome'], { allowFail: true });
+    log('AdGuardHome запущен');
 }
 function checkDhcpPort() {
     const output = runCommand('ss', ['-ulnp'], { captureOutput: true, allowFail: true });
