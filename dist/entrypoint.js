@@ -32,6 +32,7 @@ const config = {
         hostname: process.env.CLOUDINIT_HOSTNAME ?? 'alpine-qemu',
         password: process.env.CLOUDINIT_PASSWORD ?? 'alpine',
         seedImagePath: process.env.CLOUDINIT_SEED_PATH ?? '/root/cloudinit-seed.img',
+        imagePath: process.env.CLOUDINIT_IMAGE_PATH ?? '/root/alpine.qcow2',
         commands: process.env.CLOUDINIT_COMMANDS?.split(';')
             .map((item) => item.trim())
             .filter(Boolean) ?? ['echo "AdGuardHome test VM is ready"'],
@@ -226,11 +227,14 @@ function startQemu() {
     }
     log('=== Step 7: Подготовка cloud-init и запуск Alpine Linux ===');
     const cloudInitImage = prepareCloudInitImage();
+    if (!(0, fs_1.existsSync)(config.cloudInit.imagePath)) {
+        throw new Error(`Файл образа гостя не найден: ${config.cloudInit.imagePath}`);
+    }
     const qemu = (0, child_process_1.spawn)('qemu-system-x86_64', [
         '-m',
         '256M',
         '-drive',
-        'file=/root/alpine.qcow2,if=virtio,format=qcow2',
+        `file=${config.cloudInit.imagePath},if=virtio,format=qcow2`,
         '-boot',
         'c',
         '-drive',

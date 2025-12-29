@@ -30,6 +30,7 @@ interface RunnerConfig {
     hostname: string;
     password: string;
     seedImagePath: string;
+    imagePath: string;
     commands: string[];
   };
 }
@@ -60,6 +61,7 @@ const config: RunnerConfig = {
     hostname: process.env.CLOUDINIT_HOSTNAME ?? 'alpine-qemu',
     password: process.env.CLOUDINIT_PASSWORD ?? 'alpine',
     seedImagePath: process.env.CLOUDINIT_SEED_PATH ?? '/root/cloudinit-seed.img',
+    imagePath: process.env.CLOUDINIT_IMAGE_PATH ?? '/root/alpine.qcow2',
     commands:
       process.env.CLOUDINIT_COMMANDS?.split(';')
         .map((item) => item.trim())
@@ -291,6 +293,9 @@ function startQemu() {
   log('=== Step 7: Подготовка cloud-init и запуск Alpine Linux ===');
 
   const cloudInitImage = prepareCloudInitImage();
+  if (!existsSync(config.cloudInit.imagePath)) {
+    throw new Error(`Файл образа гостя не найден: ${config.cloudInit.imagePath}`);
+  }
 
   const qemu = spawn(
     'qemu-system-x86_64',
@@ -298,7 +303,7 @@ function startQemu() {
       '-m',
       '256M',
       '-drive',
-      'file=/root/alpine.qcow2,if=virtio,format=qcow2',
+      `file=${config.cloudInit.imagePath},if=virtio,format=qcow2`,
       '-boot',
       'c',
       '-drive',
