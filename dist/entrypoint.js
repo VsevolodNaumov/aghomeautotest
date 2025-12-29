@@ -282,7 +282,7 @@ async function restartAdGuard() {
         log('⏭️  Пропускаю рестарт AdGuardHome (SKIP_ADGUARD_RESTART=1).');
         return;
     }
-    runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome -s restart']);
+    runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome']);
     log('♻️  AdGuardHome перезапускается, ожидаем веб-интерфейс...');
     await waitForAdGuardWeb([3000, 80]);
 }
