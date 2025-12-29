@@ -183,28 +183,33 @@ function restartInterfaces() {
 async function configureAdGuardHome() {
   log('=== Step 5: Настройка AdGuardHome ===');
 
-  await waitForAdGuardHome('http://127.0.0.1:3000');
+  await waitForAdGuardHome('http://127.0.0.1:3000', 30, 2000);
 
-  const configureResponse = await fetch('http://127.0.0.1:3000/control/install/configure', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      web: { ip: '0.0.0.0', port: 80 },
-      dns: { ip: '0.0.0.0', port: 53 },
-      username: config.adminUser,
-      password: config.adminPassword,
-    }),
-  });
+  await withRetries(async () => {
+    const configureResponse = await fetch('http://127.0.0.1:3000/control/install/configure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        web: { ip: '0.0.0.0', port: 80 },
+        dns: { ip: '0.0.0.0', port: 53 },
+        username: config.adminUser,
+        password: config.adminPassword,
+      }),
+    });
 
-  if (!configureResponse.ok) {
-    const body = await configureResponse.text();
-    throw new Error(`Не удалось выполнить базовую конфигурацию: HTTP ${configureResponse.status} ${body}`);
-  }
+    if (!configureResponse.ok) {
+      const body = await configureResponse.text();
+      throw new Error(`Не удалось выполнить базовую конфигурацию: HTTP ${configureResponse.status} ${body}`);
+    }
+  }, 10, 3000, 'выполнить базовую конфигурацию AdGuardHome');
 
-  const cookie = await loginAndGetCookie();
-  if (!cookie) {
-    throw new Error('Не удалось получить cookie сессии AdGuardHome');
-  }
+  const cookie = await withRetries(async () => {
+    const sessionCookie = await loginAndGetCookie();
+    if (!sessionCookie) {
+      throw new Error('Не удалось получить cookie сессии AdGuardHome');
+    }
+    return sessionCookie;
+  }, 10, 2000, 'получить cookie сессии AdGuardHome');
 
   log(`Cookie: ${cookie}`);
 
@@ -303,6 +308,26 @@ async function waitForAdGuardHome(url: string, attempts = 15, delayMs = 2000) {
   }
 
   throw new Error(`AdGuardHome не доступен после ${attempts} попыток`);
+}
+
+async function withRetries<T>(
+  fn: () => Promise<T>,
+  attempts: number,
+  delayMs: number,
+  label: string,
+): Promise<T> {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      log(`Попытка ${label} (${attempt}/${attempts}) не удалась: ${String(error)}`);
+      if (attempt < attempts) {
+        await wait(delayMs);
+      }
+    }
+  }
+
+  throw new Error(`Не удалось ${label} после ${attempts} попыток`);
 }
 
 function restartAdGuard() {
