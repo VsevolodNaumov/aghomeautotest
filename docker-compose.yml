@@ -1,0 +1,18 @@
+services:
+  qemu-adguard:
+    build: .
+    container_name: qemu-adguard
+    stdin_open: true
+    tty: true
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    security_opt:
+      - seccomp=unconfined
+    networks:
+      - default
+    volumes:
+      - ./logs:/var/log
+    ports:
+      - "80:80"
