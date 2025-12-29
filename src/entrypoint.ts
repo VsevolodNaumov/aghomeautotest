@@ -147,7 +147,7 @@ async function installAdGuardHome() {
     'curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v -r',
   ]);
   log('Принудительный запуск AdGuardHome после установки');
-  runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome'], { allowFail: true });
+  runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome -s start'], { allowFail: true });
   log('✅ AdGuardHome установлен');
 }
 
