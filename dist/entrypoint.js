@@ -101,7 +101,7 @@ async function installAdGuardHome() {
         'curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v -r',
     ]);
     log('Принудительный запуск AdGuardHome после установки');
-    runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome'], { allowFail: true });
+    runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome -s start'], { allowFail: true });
     log('✅ AdGuardHome установлен');
 }
 function createInternalNetwork() {
@@ -282,7 +282,7 @@ async function restartAdGuard() {
         log('⏭️  Пропускаю рестарт AdGuardHome (SKIP_ADGUARD_RESTART=1).');
         return;
     }
-    runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome']);
+    runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome -s start']);
     log('♻️  AdGuardHome перезапускается, ожидаем веб-интерфейс...');
     await waitForAdGuardWeb([3000, 80]);
 }
