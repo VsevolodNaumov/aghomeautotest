@@ -182,7 +182,10 @@ function restartInterfaces() {
 
 async function configureAdGuardHome() {
   log('=== Step 5: Настройка AdGuardHome ===');
-  await fetch('http://127.0.0.1:3000/control/install/configure', {
+
+  await waitForAdGuardHome('http://127.0.0.1:3000');
+
+  const configureResponse = await fetch('http://127.0.0.1:3000/control/install/configure', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -191,7 +194,12 @@ async function configureAdGuardHome() {
       username: config.adminUser,
       password: config.adminPassword,
     }),
-  }).catch((error) => log(`⚠️  Не удалось выполнить базовую конфигурацию: ${String(error)}`));
+  });
+
+  if (!configureResponse.ok) {
+    const body = await configureResponse.text();
+    throw new Error(`Не удалось выполнить базовую конфигурацию: HTTP ${configureResponse.status} ${body}`);
+  }
 
   const cookie = await loginAndGetCookie();
   if (!cookie) {
@@ -276,6 +284,25 @@ async function enableDhcp(cookie: string) {
   }
 
   throw new Error('DHCP не удалось включить после 10 попыток');
+}
+
+async function waitForAdGuardHome(url: string, attempts = 15, delayMs = 2000) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, { method: 'GET' });
+      log(`Проверка доступности AdGuardHome (${attempt}/${attempts}): HTTP ${response.status}`);
+
+      if (response.ok || (response.status >= 400 && response.status < 500)) {
+        return;
+      }
+    } catch (error) {
+      log(`AdGuardHome не отвечает (${attempt}/${attempts}): ${String(error)}`);
+    }
+
+    await wait(delayMs);
+  }
+
+  throw new Error(`AdGuardHome не доступен после ${attempts} попыток`);
 }
 
 function restartAdGuard() {
