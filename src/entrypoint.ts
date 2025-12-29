@@ -1,5 +1,5 @@
-import { appendFileSync, existsSync, mkdirSync } from 'fs';
-import { spawn, spawnSync } from 'child_process';
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'fs';
+import { spawn, spawnSync, SpawnSyncOptionsWithStringEncoding } from 'child_process';
 
 interface DhcpConfig {
   interfaceName: string;
@@ -25,6 +25,12 @@ interface RunnerConfig {
   hostInterface: string;
   bridgeName: string;
   dhcp: DhcpConfig;
+  qemu: {
+    imagePath: string;
+    cloudInitIso: string;
+    hostname: string;
+    commands: string[];
+  };
 }
 
 const config: RunnerConfig = {
@@ -49,7 +55,22 @@ const config: RunnerConfig = {
     v6RangeEnd: process.env.DHCP_V6_RANGE_END ?? '',
     v6LeaseDuration: Number(process.env.DHCP_V6_LEASE_DURATION ?? '86400'),
   },
+  qemu: {
+    imagePath: process.env.QEMU_IMAGE_PATH ?? '/root/debian-cloud.qcow2',
+    cloudInitIso: process.env.QEMU_CLOUDINIT_ISO ?? '/root/cloudinit.iso',
+    hostname: process.env.QEMU_HOSTNAME ?? 'aghome-cloud',
+    commands: parseCloudInitCommands(
+      process.env.CLOUDINIT_COMMANDS ?? 'echo "cloud-init provisioning completed"',
+    ),
+  },
 };
+
+function parseCloudInitCommands(commands: string): string[] {
+  return commands
+    .split(/\n|;/)
+    .map((cmd) => cmd.trim())
+    .filter(Boolean);
+}
 
 function ensureLogLocation() {
   const directory = config.logPath.substring(0, config.logPath.lastIndexOf('/'));
@@ -72,7 +93,7 @@ function runCommand(
 ): string {
   const prettyCommand = `$ ${command} ${args.join(' ')}`.trim();
   log(prettyCommand);
-  const spawnOptions = {
+  const spawnOptions: SpawnSyncOptionsWithStringEncoding = {
     stdio: options.captureOutput ? 'pipe' : 'inherit',
     encoding: 'utf-8' as const,
   };
@@ -272,14 +293,19 @@ function startQemu() {
     return;
   }
 
-  log('=== Step 7: Запуск Alpine Linux напрямую ===');
+  log('=== Step 7: Подготовка cloud-init для QEMU ===');
+  prepareCloudInitImage();
+
+  log('=== Step 8: Запуск Debian cloud образа ===');
   const qemu = spawn(
     'qemu-system-x86_64',
     [
       '-m',
-      '256M',
+      '512M',
       '-drive',
-      'file=/root/alpine.qcow2,if=virtio,format=qcow2',
+      `file=${config.qemu.imagePath},if=virtio,format=qcow2`,
+      '-drive',
+      `file=${config.qemu.cloudInitIso},format=raw,if=virtio`,
       '-boot',
       'c',
       '-nic',
@@ -296,6 +322,33 @@ function startQemu() {
     log(`QEMU завершился с кодом ${code ?? 0}`);
     process.exit(code ?? 0);
   });
+}
+
+function prepareCloudInitImage() {
+  const cloudInitDir = '/root/cloud-init';
+
+  if (!existsSync(cloudInitDir)) {
+    mkdirSync(cloudInitDir, { recursive: true });
+  }
+
+  const userDataPath = `${cloudInitDir}/user-data`;
+  const metaDataPath = `${cloudInitDir}/meta-data`;
+
+  const runcmdSection =
+    config.qemu.commands.length > 0
+      ? config.qemu.commands
+          .map((cmd) => `  - ["/bin/sh", "-c", "${cmd.replace(/"/g, '\\"')}"]`)
+          .join('\n')
+      : '  - ["/bin/true"]';
+
+  const userData = `#cloud-config\nusers:\n  - default\nssh_pwauth: true\nhostname: ${config.qemu.hostname}\nruncmd:\n${runcmdSection}\n`;
+  const metaData = `instance-id: ag-qemu-1\nlocal-hostname: ${config.qemu.hostname}\n`;
+
+  writeFileSync(userDataPath, userData, { encoding: 'utf-8' });
+  writeFileSync(metaDataPath, metaData, { encoding: 'utf-8' });
+
+  runCommand('cloud-localds', [config.qemu.cloudInitIso, userDataPath, metaDataPath]);
+  log('✅ cloud-init ISO готов');
 }
 
 async function main() {
