@@ -185,28 +185,36 @@ function restartInterfaces() {
 async function configureAdGuardHome() {
   log('=== Step 5: Настройка AdGuardHome ===');
 
-  await waitForAdGuardHome('http://127.0.0.1:3000', 30, 2000);
+  let adGuardPort = await waitForAdGuardWeb([3000, 80], 30, 2000);
+  let baseUrl = `http://127.0.0.1:${adGuardPort}`;
 
-  await withRetries(async () => {
-    const configureResponse = await fetch('http://127.0.0.1:3000/control/install/configure', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        web: { ip: '0.0.0.0', port: 80 },
-        dns: { ip: '0.0.0.0', port: 53 },
-        username: config.adminUser,
-        password: config.adminPassword,
-      }),
-    });
+  if (adGuardPort === 3000) {
+    await withRetries(async () => {
+      const configureResponse = await fetch(`${baseUrl}/control/install/configure`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          web: { ip: '0.0.0.0', port: 80 },
+          dns: { ip: '0.0.0.0', port: 53 },
+          username: config.adminUser,
+          password: config.adminPassword,
+        }),
+      });
 
-    if (!configureResponse.ok) {
-      const body = await configureResponse.text();
-      throw new Error(`Не удалось выполнить базовую конфигурацию: HTTP ${configureResponse.status} ${body}`);
-    }
-  }, 10, 3000, 'выполнить базовую конфигурацию AdGuardHome');
+      if (!configureResponse.ok) {
+        const body = await configureResponse.text();
+        throw new Error(`Не удалось выполнить базовую конфигурацию: HTTP ${configureResponse.status} ${body}`);
+      }
+    }, 10, 3000, 'выполнить базовую конфигурацию AdGuardHome');
+
+    adGuardPort = await waitForAdGuardWeb([80, 3000], 20, 2000);
+    baseUrl = `http://127.0.0.1:${adGuardPort}`;
+  } else {
+    log('⏭️  Базовая конфигурация пропущена: AdGuardHome уже доступен на нестандартном порту.');
+  }
 
   const cookie = await withRetries(async () => {
-    const sessionCookie = await loginAndGetCookie();
+    const sessionCookie = await loginAndGetCookie(baseUrl);
     if (!sessionCookie) {
       throw new Error('Не удалось получить cookie сессии AdGuardHome');
     }
@@ -215,12 +223,12 @@ async function configureAdGuardHome() {
 
   log(`Cookie: ${cookie}`);
 
-  await fetchDhcpInterfaces(cookie);
-  await enableDhcp(cookie);
+  await fetchDhcpInterfaces(baseUrl, cookie);
+  await enableDhcp(baseUrl, cookie);
 }
 
-async function loginAndGetCookie(): Promise<string | null> {
-  const response = await fetch('http://127.0.0.1/control/login', {
+async function loginAndGetCookie(baseUrl: string): Promise<string | null> {
+  const response = await fetch(`${baseUrl}/control/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: config.adminUser, password: config.adminPassword }),
@@ -235,9 +243,9 @@ async function loginAndGetCookie(): Promise<string | null> {
   return fallback ? fallback.split(';')[0] : null;
 }
 
-async function fetchDhcpInterfaces(cookie: string) {
+async function fetchDhcpInterfaces(baseUrl: string, cookie: string) {
   log('Проверка интерфейсов');
-  const response = await fetch('http://127.0.0.1/control/dhcp/interfaces', {
+  const response = await fetch(`${baseUrl}/control/dhcp/interfaces`, {
     method: 'GET',
     headers: { Cookie: cookie },
   });
@@ -246,7 +254,7 @@ async function fetchDhcpInterfaces(cookie: string) {
   log(`Ответ DHCP интерфейсов: ${body}`);
 }
 
-async function enableDhcp(cookie: string) {
+async function enableDhcp(baseUrl: string, cookie: string) {
   log('=== Step 6: Настройка DHCP ===');
   const payload = {
     enabled: true,
@@ -268,7 +276,7 @@ async function enableDhcp(cookie: string) {
   for (let attempt = 1; attempt <= 10; attempt += 1) {
     log(`Попытка включить DHCP (${attempt})...`);
     try {
-      const response = await fetch('http://127.0.0.1/control/dhcp/set_config', {
+      const response = await fetch(`${baseUrl}/control/dhcp/set_config`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -332,12 +340,12 @@ async function withRetries<T>(
   throw new Error(`Не удалось ${label} после ${attempts} попыток`);
 }
 
-async function waitForAdGuardWeb(ports: number[], attempts = 15, delayMs = 2000) {
+async function waitForAdGuardWeb(ports: number[], attempts = 15, delayMs = 2000): Promise<number> {
   for (const port of ports) {
     try {
       await waitForAdGuardHome(`http://127.0.0.1:${port}`, attempts, delayMs);
       log(`✅ AdGuardHome отвечает на порту ${port}`);
-      return;
+      return port;
     } catch (error) {
       log(`⚠️  AdGuardHome не ответил на порту ${port}: ${String(error)}`);
     }
