@@ -151,11 +151,11 @@ async function configureAdGuardHome() {
                 throw new Error(`Не удалось выполнить базовую конфигурацию: HTTP ${configureResponse.status} ${body}`);
             }
         }, 10, 3000, 'выполнить базовую конфигурацию AdGuardHome');
-        adGuardPort = await waitForAdGuardWeb([80, 3000], 20, 2000);
+        adGuardPort = await waitForAdGuardWeb([80], 20, 2000);
         baseUrl = `http://127.0.0.1:${adGuardPort}`;
     }
     else {
-        log('⏭️  Базовая конфигурация пропущена: AdGuardHome уже доступен на нестандартном порту.');
+        log('⏭️  Базовая конфигурация пропущена: AdGuardHome уже доступен на порту 80.');
     }
     const cookie = await withRetries(async () => {
         const sessionCookie = await loginAndGetCookie(baseUrl);
@@ -282,9 +282,9 @@ async function restartAdGuard() {
         log('⏭️  Пропускаю рестарт AdGuardHome (SKIP_ADGUARD_RESTART=1).');
         return;
     }
-    runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome -s start']);
+    runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome']);
     log('♻️  AdGuardHome перезапускается, ожидаем веб-интерфейс...');
-    await waitForAdGuardWeb([3000, 80]);
+    await waitForAdGuardWeb([80]);
 }
 function checkDhcpPort() {
     const output = runCommand('ss', ['-ulnp'], { captureOutput: true, allowFail: true });
