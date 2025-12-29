@@ -6,6 +6,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const fs_1 = require("fs");
 const child_process_1 = require("child_process");
 const path_1 = __importDefault(require("path"));
+const defaultHostname = process.env.CLOUDINIT_HOSTNAME ?? 'test.xyz';
+const defaultCloudInitCommands = [
+    'echo "AdGuardHome test VM is ready"',
+    `hostname ${defaultHostname}`,
+    `udhcpc -i eth0 -v -x hostname:${defaultHostname}`,
+    'LEASE_IP=$(ip -4 addr show dev eth0 | awk "/inet / {print $2}")',
+    'CURRENT_HOSTNAME=$(hostname)',
+    'if [ -z "$LEASE_IP" ]; then echo "❌ DHCP lease for eth0 is empty"; exit 1; fi',
+    `if [ "$CURRENT_HOSTNAME" != "${defaultHostname}" ]; then echo "❌ Hostname is $CURRENT_HOSTNAME, expected ${defaultHostname}"; exit 1; fi`,
+    'echo "✅ DHCP lease obtained: $LEASE_IP with hostname $CURRENT_HOSTNAME"',
+];
 const config = {
     logPath: process.env.LOG_PATH ?? '/var/log/startup.log',
     checkInternet: process.env.SKIP_INTERNET_CHECK !== '1',
@@ -29,13 +40,13 @@ const config = {
         v6LeaseDuration: Number(process.env.DHCP_V6_LEASE_DURATION ?? '86400'),
     },
     cloudInit: {
-        hostname: process.env.CLOUDINIT_HOSTNAME ?? 'alpine-qemu',
+        hostname: defaultHostname,
         password: process.env.CLOUDINIT_PASSWORD ?? 'alpine',
         seedImagePath: process.env.CLOUDINIT_SEED_PATH ?? '/root/cloudinit-seed.img',
         imagePath: process.env.CLOUDINIT_IMAGE_PATH ?? '/root/alpine.qcow2',
         commands: process.env.CLOUDINIT_COMMANDS?.split(';')
             .map((item) => item.trim())
-            .filter(Boolean) ?? ['echo "AdGuardHome test VM is ready"'],
+            .filter(Boolean) ?? defaultCloudInitCommands,
     },
 };
 function ensureLogLocation() {
