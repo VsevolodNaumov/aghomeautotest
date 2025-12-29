@@ -256,13 +256,27 @@ async function withRetries(fn, attempts, delayMs, label) {
     }
     throw new Error(`Не удалось ${label} после ${attempts} попыток`);
 }
-function restartAdGuard() {
+async function waitForAdGuardWeb(ports, attempts = 15, delayMs = 2000) {
+    for (const port of ports) {
+        try {
+            await waitForAdGuardHome(`http://127.0.0.1:${port}`, attempts, delayMs);
+            log(`✅ AdGuardHome отвечает на порту ${port}`);
+            return;
+        }
+        catch (error) {
+            log(`⚠️  AdGuardHome не ответил на порту ${port}: ${String(error)}`);
+        }
+    }
+    throw new Error(`AdGuardHome не доступен ни на одном из портов: ${ports.join(', ')}`);
+}
+async function restartAdGuard() {
     if (!config.restartAdGuard) {
         log('⏭️  Пропускаю рестарт AdGuardHome (SKIP_ADGUARD_RESTART=1).');
         return;
     }
-    // runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome'], { allowFail: true });
-    log('AdGuardHome запущен');
+    runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome -s restart']);
+    log('♻️  AdGuardHome перезапускается, ожидаем веб-интерфейс...');
+    await waitForAdGuardWeb([3000, 80]);
 }
 function checkDhcpPort() {
     const output = runCommand('ss', ['-ulnp'], { captureOutput: true, allowFail: true });
@@ -359,10 +373,10 @@ async function main() {
         await installAdGuardHome();
         createInternalNetwork();
         restartInterfaces();
-        restartAdGuard();
+        await restartAdGuard();
         await wait(2000);
         await configureAdGuardHome();
-        restartAdGuard();
+        await restartAdGuard();
         await wait(5000);
         checkDhcpPort();
         startQemu();
