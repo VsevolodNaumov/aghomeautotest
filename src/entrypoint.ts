@@ -360,7 +360,7 @@ async function restartAdGuard() {
     return;
   }
 
-  runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome -s restart']);
+  runCommand('sh', ['-c', 'cd /opt/AdGuardHome && ./AdGuardHome']);
   log('♻️  AdGuardHome перезапускается, ожидаем веб-интерфейс...');
   await waitForAdGuardWeb([3000, 80]);
 }
