@@ -1,0 +1,15 @@
+{
+  "name": "aghomeautotest",
+  "version": "1.0.0",
+  "description": "Automation helper for AdGuardHome DHCP tests",
+  "main": "dist/entrypoint.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/entrypoint.js"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.5.1",
+    "typescript": "^5.5.4"
+  }
+}
